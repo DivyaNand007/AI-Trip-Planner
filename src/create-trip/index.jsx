@@ -1,3 +1,4 @@
+
 import React from 'react'
 import GooglePlacesAutocomplete from 'react-google-places-autocomplete';
 import { useState } from 'react';
@@ -90,7 +91,7 @@ const CreateTrip = () => {
 
   //Function 3
   //This function is triggered by Button click.
-  const OnGenerateTrip = async () => {
+const OnGenerateTrip = async () => {
   if (formData?.noOfDays > 5 || !formData?.location || !formData?.budget || !formData?.travelList) {
     toast("Fill all the details");
     return;
@@ -146,6 +147,10 @@ const CreateTrip = () => {
   } finally {
     setLoading(false);
   }
+};
+
+
+
 
 
 
@@ -163,29 +168,24 @@ const CreateTrip = () => {
 
 
       // SaveAiTrip(result?.response?.text())
-    }
-  const user = JSON.parse(localStorage.getItem('user'))
-    const DocId = Date.now().toString()   //Document name
+    
+  // function 6: storing in firebase
+const SaveAiTrip = async (TripData) => {
+  setLoading(true);
 
-    //function 6: storing in firebase
-    const SaveAiTrip = async (TripData) => {
-      setLoading(true);
+  const user = JSON.parse(localStorage.getItem('user'));
+  const DocId = Date.now().toString();
 
-      const user = JSON.parse(localStorage.getItem('user'));
-      const DocId = Date.now().toString();
+  await setDoc(doc(db, "AiTrips", DocId), {
+    userSelection: formData,
+    tripData: TripData,
+    userEmail: user?.email,
+    id: DocId
+  });
 
-      await setDoc(doc(db, "AiTrips", DocId), {
-        userSelection: formData,
-        tripData: TripData,
-        userEmail: user?.email,
-        id: DocId
-      });
-
-      setLoading(false);
-      navigate(`/view-trip/${DocId}`);
-    };
-
-
+  setLoading(false);
+  navigate(`/view-trip/${DocId}`);
+};
 
 
 

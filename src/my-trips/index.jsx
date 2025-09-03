@@ -53,6 +53,7 @@ const GetUSerTrips = async () => {
 
 
 
+
   return (
     <div className='px-2 sm:px-6 md:px-12 lg:px-5 xl:px-5 2xl:px-5 3xl:px-5 mt-10'>
 
