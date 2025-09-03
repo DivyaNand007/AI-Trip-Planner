@@ -90,35 +90,49 @@ const CreateTrip = () => {
 
   //Function 3
   //This function is triggered by Button click.
-  const OnGenerateTrip = async () => {     //This is used ki jb generate trip pe dalehge aur days > 5 hoga to generate nhi hoga.
-    //toast method function
-    if (formData?.noOfDays > 5 || !formData?.location || !formData?.budget || !formData?.travelList) {     //Ye generate trip wale button ka function h
-      toast("Fill all the details");
-      return;                     //activity 1
-    }
-    //storing user data in 'user' and opening dialog box if user data isn't available
-    const user = localStorage.getItem('user'); //activity 2          //agar localstorage mein user nhi hoga to dialog box khulega
-    if (!user) {
-      setOpenDialog(true)
-      return;
-    }
-    //setting loading
-    setLoading(true);
-    // Function to replace pre written prompt with user input from form data
-    //AI- Prompt task from here
-    const FINAL_PROMPT = AI_PROMPT                //activity 3
-      .replace('{location}', formData?.location?.label)
-      .replace('{totalDays}', formData?.noOfDays)
-      .replace('{traveler}', formData?.travelList) //yaha traveler ka travelList kiye h (29-07/ 08:50am)
-      .replace('{budget}', formData?.budget)
-    console.log("ye final prompt h", FINAL_PROMPT);
+  const OnGenerateTrip = async () => {
+  if (formData?.noOfDays > 5 || !formData?.location || !formData?.budget || !formData?.travelList) {
+    toast("Fill all the details");
+    return;
+  }
 
+  const user = localStorage.getItem('user');
+  if (!user) {
+    setOpenDialog(true);
+    return;
+  }
 
-    const result = await getTravelPlan(FINAL_PROMPT);
+  setLoading(true);
+
+  const FINAL_PROMPT = AI_PROMPT
+    .replace('{location}', formData?.location?.label)
+    .replace('{totalDays}', formData?.noOfDays)
+    .replace('{traveler}', formData?.travelList)
+    .replace('{budget}', formData?.budget);
+
+  console.log("Final Prompt:", FINAL_PROMPT);
+
+  try {
+    // Retry Gemini API
+    let result;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        result = await getTravelPlan(FINAL_PROMPT);
+        break;
+      } catch (err) {
+        if (err?.status === "UNAVAILABLE" && attempt < 2) {
+          console.warn("Gemini overloaded, retrying in 3s...");
+          await new Promise(r => setTimeout(r, 3000));
+          continue;
+        }
+        throw err;
+      }
+    }
+
     let tripText = typeof result === "string" ? result : result?.text;
-
     const cleanedTripText = stripCodeBlock(tripText);
 
+    // Parse JSON if possible, else save as plain text
     try {
       const tripJson = JSON.parse(cleanedTripText);
       await SaveAiTrip(tripJson);
@@ -126,190 +140,199 @@ const CreateTrip = () => {
       await SaveAiTrip(cleanedTripText);
     }
 
-    // const result = await getTravelPlan(FINAL_PROMPT);//AI gemini module usage, AI model calling
-    // console.log("--", result?.response?.text());
-    // setLoading(false);
-    // // SaveAiTrip("--", result?.response?.text());
-    // const tripText = typeof result === "string" ? result : result?.text || (await result?.response?.text?.());
-    // SaveAiTrip(tripText);
-
-    // The function getTravelPlan(FINAL_PROMPT) is giving you a result, but it doesn't have a response field like you expected.
-    // Maybe result is a string directly
-    // Or maybe result is like { text: "your trip details" }
-    // But it's not like { response: { text() {} } } (which is what your code used)
+  } catch (error) {
+    console.error("Error generating trip:", error);
+    toast("Something went wrong while generating the trip");
+  } finally {
     setLoading(false);
-
-    // SaveAiTrip(result?.response?.text())
   }
+
+
+
+      // const result = await getTravelPlan(FINAL_PROMPT);//AI gemini module usage, AI model calling
+      // console.log("--", result?.response?.text());
+      // setLoading(false);
+      // // SaveAiTrip("--", result?.response?.text());
+      // const tripText = typeof result === "string" ? result : result?.text || (await result?.response?.text?.());
+      // SaveAiTrip(tripText);
+
+      // The function getTravelPlan(FINAL_PROMPT) is giving you a result, but it doesn't have a response field like you expected.
+      // Maybe result is a string directly
+      // Or maybe result is like { text: "your trip details" }
+      // But it's not like { response: { text() {} } } (which is what your code used)
+
+
+      // SaveAiTrip(result?.response?.text())
+    }
   const user = JSON.parse(localStorage.getItem('user'))
-  const DocId = Date.now().toString()   //Document name
+    const DocId = Date.now().toString()   //Document name
 
-  //function 6: storing in firebase
-  const SaveAiTrip = async (TripData) => {   //this is a format we took from documentation of usage firestore. either we can define the doc elements there or here and it will be taken automatically in the fire store
-    setLoading(true);
+    //function 6: storing in firebase
+    const SaveAiTrip = async (TripData) => {
+      setLoading(true);
 
-    await setDoc(doc(db, "AiTrips", DocId), {
-      userSelection: formData,
-      tripData: TripData,
-      userEmail: user?.email,
-      id: DocId                      //user is an object with entries and .email is used to get that entry from the user.
+      const user = JSON.parse(localStorage.getItem('user'));
+      const DocId = Date.now().toString();
 
+      await setDoc(doc(db, "AiTrips", DocId), {
+        userSelection: formData,
+        tripData: TripData,
+        userEmail: user?.email,
+        id: DocId
+      });
+
+      setLoading(false);
+      navigate(`/view-trip/${DocId}`);
+    };
+
+
+
+
+
+    //Function 4: User login: @react-oauth/google package:
+    const login = useGoogleLogin({       //Method one-tap copied from oauth
+      onSuccess: (codeResp) => GetUserProfile(codeResp),    //on success gives response
+      onError: () => console.log('Login Failed')
     });
-    setLoading(false);
 
 
-    navigate(`/view-trip/${DocId}`) //real url creation
-  };
+    //function 5
+    //To get user profile through generated tokens
+    const GetUserProfile = (tokenInfo) => {
+      axios.get(`https://www.googleapis.com/oauth2/v1/userinfo?access_token=${tokenInfo?.access_token}`,
+        {
+          headers: {
+            Authorization: `Bearer ${tokenInfo?.access_token}`,
+            Accept: 'Application/json'
+          }
+        })
+        .then((resp) => {
+          console.log(resp);
+          localStorage.setItem('user', JSON.stringify(resp.data)); //jo data aya h as response usko localStorage mein save kar dege
+          setOpenDialog(false); //user data save hone k baad dialog band hoga
+          OnGenerateTrip();    //method will be called so ai agent can work.
+        })
+    }
 
 
 
 
 
 
-  //Function 4: User login: @react-oauth/google package:
-  const login = useGoogleLogin({       //Method one-tap copied from oauth
-    onSuccess: (codeResp) => GetUserProfile(codeResp),    //on success gives response
-    onError: () => console.log('Login Failed')
-  });
 
 
-  //function 5
-  //To get user profile through generated tokens
-  const GetUserProfile = (tokenInfo) => {
-    axios.get(`https://www.googleapis.com/oauth2/v1/userinfo?access_token=${tokenInfo?.access_token}`,
-      {
-        headers: {
-          Authorization: `Bearer ${tokenInfo?.access_token}`,
-          Accept: 'Application/json'
-        }
-      })
-      .then((resp) => {
-        console.log(resp);
-        localStorage.setItem('user', JSON.stringify(resp.data)); //jo data aya h as response usko localStorage mein save kar dege
-        setOpenDialog(false); //user data save hone k baad dialog band hoga
-        OnGenerateTrip();    //method will be called so ai agent can work.
-      })
+    //Start of the return statement, UI part
+    return (
+
+      <div className='sm:px-10 md:px-32 lg:px-56 xl:px-10 px-5 py-10'>
+        <h2 className='text-2xl text-blue-700 font-bold text-shadow-white font-serif mt-10 text-left'>
+          <CiLocationArrow1 className="inline-block" /> Tell us your travel preferences:
+        </h2>
+        <p className='mt-3 mb-10 text-gray-600 text-xl text-left font-bold'>
+          Just provide some basic information about your trip, and we'll handle the rest.
+        </p>
+
+        <div className='mt-15'>
+          <h2 className='text-xl my-5 mt-9 font-medium text-left'>What is destination of choice? </h2>
+          <GooglePlacesAutocomplete
+            apiKey={import.meta.env.VITE_GOOGLE_PLACE_API_KEY}
+            selectProps={{
+              value: place,
+              onChange: (v) => { setPlace(v); handleInputChange('location', v) }
+            }}
+          />
+        </div>
+
+        <div className='mt-10 flex flex-col gap-6'>
+          <h2 className='mt-15 text-left font-medium text-xl'>How many days are you planning to visit for?</h2>
+          <Input type="number" placeholder={'Ex. 3'} min='0'
+            onChange={(e) => handleInputChange('noOfDays', e.target.value)}
+          />
+        </div>
+
+        <div >
+          <h2 className='mt-15 text-left font-medium text-xl'>What is your Budget?</h2>
+          <div className='grid grid-cols-3 gap-5 mt-5'>
+            {SelectBudgetOptions.map((item, index) => (
+              <div
+                key={index}
+                onClick={() => handleInputChange('budget', item.title)}
+                className={`p-4 border rounded-lg hover:shadow-lg hover:bg-amber-200 cursor-pointer transition-all duration-200
+    ${formData?.budget === item.title
+                    ? 'border-black bg-amber-200 shadow-lg'
+                    : 'border-gray-400'
+                  }`
+                }
+              > { /*Div tag ends here*/}
+                <h2 className='text-4xl'>{item.icon}</h2>
+                <h2 className='text-2xl mt-3 font-bold'>{item.title}</h2>
+                <h2 className='text-gray-500 mt-1'>{item.desc}</h2>
+              </div>
+            ))}
+          </div>
+        </div>
+
+
+        <div >
+          <h2 className='mt-15 text-left font-medium text-xl'>What is your Travel List?</h2>
+          <div className='grid grid-cols-2 gap-5 mt-5'>
+            {SelectTravelLists.map((item, index) => (
+              <div key={index}
+                className={`p-4  border border-gray-400 rounded-lg hover:shadow-lg  hover:bg-amber-200 cursor-pointer
+              ${formData?.travelList == item.people
+                    ? 'border-black bg-amber-200 shadow-lg'
+                    : 'border-gray-400'}`}
+                onClick={() => handleInputChange('travelList', item.people)}
+              >
+                <h2 className='text-4xl'>{item.icon}</h2>
+                <h2 className='text-2xl mt-3 font-bold'>{item.title}</h2>
+                <h2 className='text-gray-500 mt-1'>{item.desc}</h2>
+                <h2 className='mt-3'>{item.people}</h2>
+              </div>
+            ))}
+          </div>
+        </div>
+
+
+
+        <div>
+          <Button className='my-7 p-7 text-xl hover:bg-gray-700'
+            disabled={loading}
+            onClick={OnGenerateTrip}>{loading ? <AiOutlineLoading3Quarters className='h-7 w-7 animate-spin' /> : 'Generate Trip'}
+          </Button>
+        </div>
+        <Dialog open={openDialog} onOpenChange={setOpenDialog}>
+          {/**<DialogTrigger>Open</DialogTrigger>                We dont need this one as we need to open it with the button click */}
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Sign In</DialogTitle>
+              <DialogDescription>
+                <img src='/logo1.png' className='h-20 sm:h-22 md:h-25 lg:h-28 xl:h-30 object-contain' />
+                <h2 className="mt-9 mb-2 text-2xl font-bold">Sign in with GOOGLE</h2>
+                <h3 className='mb-5 text-2xl'>Sign in with Google Authentication Security</h3>
+                <Button
+                  onClick={login}
+                  className='w-full mb-2 hover:bg-gray-700 flex gap-3 py-4 text-lg'
+                >
+                  <FcGoogle /> Sign in</Button>
+
+              </DialogDescription>
+            </DialogHeader>
+          </DialogContent>
+        </Dialog>
+
+
+
+
+        <Link to={'/'}>
+          <Button className='p-7 text-lg hover:bg-gray-700'>Home Page</Button>
+        </Link>
+
+
+
+      </div>
+
+    )
   }
 
-
-
-
-
-
-
-
-  //Start of the return statement, UI part
-  return (
-
-    <div className='sm:px-10 md:px-32 lg:px-56 xl:px-10 px-5 py-10'>
-      <h2 className='text-2xl text-blue-700 font-bold text-shadow-white font-serif mt-10 text-left'>
-        <CiLocationArrow1 className="inline-block" /> Tell us your travel preferences:
-      </h2>
-      <p className='mt-3 mb-10 text-gray-600 text-xl text-left font-bold'>
-        Just provide some basic information about your trip, and we'll handle the rest.
-      </p>
-
-      <div className='mt-15'>
-        <h2 className='text-xl my-5 mt-9 font-medium text-left'>What is destination of choice? </h2>
-        <GooglePlacesAutocomplete
-          apiKey={import.meta.env.VITE_GOOGLE_PLACE_API_KEY}
-          selectProps={{
-            value: place,
-            onChange: (v) => { setPlace(v); handleInputChange('location', v) }
-          }}
-        />
-      </div>
-
-      <div className='mt-10 flex flex-col gap-6'>
-        <h2 className='mt-15 text-left font-medium text-xl'>How many days are you planning to visit for?</h2>
-        <Input type="number" placeholder={'Ex. 3'} min='0'
-          onChange={(e) => handleInputChange('noOfDays', e.target.value)}
-        />
-      </div>
-
-      <div >
-        <h2 className='mt-15 text-left font-medium text-xl'>What is your Budget?</h2>
-        <div className='grid grid-cols-3 gap-5 mt-5'>
-          {SelectBudgetOptions.map((item, index) => (
-            <div
-              key={index}
-              onClick={() => handleInputChange('budget', item.title)}
-              className={`p-4 border rounded-lg hover:shadow-lg hover:bg-amber-200 cursor-pointer transition-all duration-200
-    ${formData?.budget === item.title
-                  ? 'border-black bg-amber-200 shadow-lg'
-                  : 'border-gray-400'
-                }`
-              }
-            > { /*Div tag ends here*/}
-              <h2 className='text-4xl'>{item.icon}</h2>
-              <h2 className='text-2xl mt-3 font-bold'>{item.title}</h2>
-              <h2 className='text-gray-500 mt-1'>{item.desc}</h2>
-            </div>
-          ))}
-        </div>
-      </div>
-
-
-      <div >
-        <h2 className='mt-15 text-left font-medium text-xl'>What is your Travel List?</h2>
-        <div className='grid grid-cols-2 gap-5 mt-5'>
-          {SelectTravelLists.map((item, index) => (
-            <div key={index}
-              className={`p-4  border border-gray-400 rounded-lg hover:shadow-lg  hover:bg-amber-200 cursor-pointer
-              ${formData?.travelList == item.people
-                  ? 'border-black bg-amber-200 shadow-lg'
-                  : 'border-gray-400'}`}
-              onClick={() => handleInputChange('travelList', item.people)}
-            >
-              <h2 className='text-4xl'>{item.icon}</h2>
-              <h2 className='text-2xl mt-3 font-bold'>{item.title}</h2>
-              <h2 className='text-gray-500 mt-1'>{item.desc}</h2>
-              <h2 className='mt-3'>{item.people}</h2>
-            </div>
-          ))}
-        </div>
-      </div>
-
-
-
-      <div>
-        <Button className='my-7 p-7 text-xl hover:bg-gray-700'
-          disabled={loading}
-          onClick={OnGenerateTrip}>{loading ? <AiOutlineLoading3Quarters className='h-7 w-7 animate-spin' /> : 'Generate Trip'}
-        </Button>
-      </div>
-      <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-        {/**<DialogTrigger>Open</DialogTrigger>                We dont need this one as we need to open it with the button click */}
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Sign In</DialogTitle>
-            <DialogDescription>
-              <img src='/logo1.png' className='h-20 sm:h-22 md:h-25 lg:h-28 xl:h-30 object-contain' />
-              <h2 className="mt-9 mb-2 text-2xl font-bold">Sign in with GOOGLE</h2>
-              <h3 className='mb-5 text-2xl'>Sign in with Google Authentication Security</h3>
-              <Button
-                onClick={login}
-                className='w-full mb-2 hover:bg-gray-700 flex gap-3 py-4 text-lg'
-              >
-                <FcGoogle /> Sign in</Button>
-
-            </DialogDescription>
-          </DialogHeader>
-        </DialogContent>
-      </Dialog>
-
-
-
-
-      <Link to={'/'}>
-        <Button className='p-7 text-lg hover:bg-gray-700'>Home Page</Button>
-      </Link>
-
-
-
-    </div>
-
-  )
-}
-
-export default CreateTrip;
+  export default CreateTrip;

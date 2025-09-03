@@ -21,27 +21,38 @@ function MyTrips() {
 
   }, [])
 
-  const GetUSerTrips = async () => {
-    const user = JSON.parse(localStorage.getItem('user'))
+const GetUSerTrips = async () => {
+  const user = JSON.parse(localStorage.getItem("user"));
 
-    if (!user) {
-      navigate('/');
-      return;
-    }
-    setUserTrips([]);
-    const q = query(collection(db, "AiTrips"), where("userEmail", "==", user?.email));    // AiTrips is collection
+  if (!user) {
+    navigate("/");
+    return;
+  }
+
+  try {
+    const q = query(
+      collection(db, "AiTrips"),
+      where("userEmail", "==", user?.email)
+    );
 
     const querySnapshot = await getDocs(q);
-    querySnapshot.forEach((doc) => {
-      // doc.data() is never undefined for query doc snapshots
-      console.log(doc.id, " => ", doc.data());
 
-      setUserTrips(prevVal => [...prevVal,  { id: doc.id, ...doc.data() }])
-      // This is in [ ] bcoz react expects only one value for state. Here we are adding doc.data as well so we have to put the value in a state as a single unit. 
-      //Also instead of using { }, we are using [ ] bcoz we have defined usestate([ ]) as array of trips. If we have defined it as object we could have used { }.
-    });
+    // Collect all trips first
+    const trips = querySnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
 
+    console.log("Fetched trips:", trips);
+
+    setUserTrips(trips); // update state once
+  } catch (error) {
+    console.error("Error fetching user trips:", error);
   }
+};
+
+
+
   return (
     <div className='px-2 sm:px-6 md:px-12 lg:px-5 xl:px-5 2xl:px-5 3xl:px-5 mt-10'>
 
@@ -79,6 +90,6 @@ function MyTrips() {
     </div>
 
   )
-}
 
+}
 export default MyTrips
